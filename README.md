@@ -1,6 +1,6 @@
 # nuxt-ship
 
-> Build a Docker image locally, ship it over SSH, run it on the server. Tar and temporary files are auto-cleaned. Inspired by [goravel-ship](https://github.com/president-tuychiyev/goravel-ship).
+> Build a Docker image locally, ship it over SSH, run it on the server. Tar and temporary files are auto-cleaned.
 
 Zero dependencies. Pure Node.js (>= 18). Works for any Dockerizable project — defaults are tuned for Nuxt SSR but you can edit the stubs for Express, Next.js, static sites, etc.
 
@@ -131,14 +131,6 @@ await ship({
   args: { user: 'root', ip: '1.2.3.4', tag: 'v1' }
 })
 ```
-
-## Comparison with goravel-ship
-
-This is a Node.js port of [goravel-ship](https://github.com/president-tuychiyev/goravel-ship) (a Goravel artisan command). The pipeline, hash strategy and self-deleting `deploy.sh` are kept identical. Differences:
-
-- Image name is read from `package.json` `"name"` instead of `go.mod` `module`
-- No `--migrate` / `--seed` flags (no built-in artisan equivalent in Node)
-- The default `Dockerfile` and compose file target Nuxt instead of Goravel
 
 ## License
 
