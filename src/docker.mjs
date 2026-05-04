@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process'
 import { createWriteStream } from 'node:fs'
-import { execSync, log } from './utils.mjs'
+import { execSync, log, resolveBin } from './utils.mjs'
 
 export function dockerBuild({ image, tag, cwd, buildArgs = [] }) {
     const args = ['build', '-t', `${image}:${tag}`]
@@ -18,15 +18,21 @@ export function dockerTag({ image, tag, alias }) {
  */
 export function dockerSaveGzip({ image, tag, tarPath }) {
     log(`docker save ${image}:${tag} | gzip > ${tarPath}`)
+    const dockerBin = resolveBin('docker')
+    const gzipBin = resolveBin('gzip')
+
     return new Promise((resolve, reject) => {
-        const save = spawn('docker', ['save', `${image}:${tag}`])
-        const gzip = spawn('gzip', ['-c'])
+        const save = spawn(dockerBin, ['save', `${image}:${tag}`])
+        const gzip = spawn(gzipBin, ['-c'])
         const out = createWriteStream(tarPath)
 
         save.stdout.pipe(gzip.stdin)
         gzip.stdout.pipe(out)
         save.stderr.on('data', (d) => process.stderr.write(d))
         gzip.stderr.on('data', (d) => process.stderr.write(d))
+
+        save.on('error', reject)
+        gzip.on('error', reject)
 
         let saveCode, gzipCode, outClosed = false
         const finish = () => {
