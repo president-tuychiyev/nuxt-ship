@@ -3,36 +3,22 @@ import { copyFileSync, existsSync, unlinkSync } from 'node:fs'
 import { join } from 'node:path'
 import { dockerBuild, dockerSaveGzip, dockerTag } from './docker.mjs'
 import { detectMuxSupport, makeTransport } from './ssh.mjs'
-import { err, log, ok, readPackageName, warn } from './utils.mjs'
+import { err, log, ok, posixSingleQuote, readPackageName, validate, warn } from './utils.mjs'
 
-/**
- * Deploy pipeline:
- *  1) .env.prod.example -> .env (locally, every run)
- *  2) docker build
- *  3) docker tag <image>:<tag> <image>:latest  (if tag != latest)
- *  4) docker save | gzip > <hash>.tar.gz
- *  5) ssh: mkdir -p <path>
- *  6) scp tar + .env + deploy.sh -> server
- *  7) scp docker-compose-prod.yml -> server:docker-compose.yml
- *  8) ssh: bash deploy.sh <hash>.tar.gz   (server-side: load image, compose up, prune)
- *  9) deploy.sh self-deletes + removes tar.gz on the server (compose.yml on failure too)
- * 10) close SSH master, remove local tar.gz
- */
 export async function ship({ projectRoot, args }) {
     if (!args.user || !args.ip) {
         throw new Error('--user and --ip are required (run `ship --help`)')
     }
 
-    const user = String(args.user)
-    const ip = String(args.ip)
-    const port = String(args.port || '22')
-    const remotePath = String(args.path || '/opt/app')
-    const tag = String(args.tag || 'latest')
-    const image = String(args.image || readPackageName(projectRoot))
-    const container = String(args.container || image)
+    const user = validate('user', args.user)
+    const ip = validate('ip', args.ip)
+    const port = validate('port', args.port || '22')
+    const remotePath = validate('path', args.path || '/opt/app')
+    const tag = validate('tag', args.tag || 'latest')
+    const image = validate('image', args.image || readPackageName(projectRoot))
+    const container = validate('container', args.container || image)
     const target = `${user}@${ip}`
 
-    // 12-char content hash for unique tar.gz name (prevents collisions on repeated runs)
     const stamp = process.hrtime.bigint().toString()
     const hash = createHash('sha256')
         .update(`${image}:${tag}_${stamp}`)
@@ -45,11 +31,16 @@ export async function ship({ projectRoot, args }) {
     const useMux = detectMuxSupport(args['no-control-master'])
     const transport = makeTransport({ target, port, controlPath: ctlPath, useMux })
 
+    const qPath = posixSingleQuote(remotePath)
+    const qImage = posixSingleQuote(image)
+    const qTag = posixSingleQuote(tag)
+    const qContainer = posixSingleQuote(container)
+    const qTarGz = posixSingleQuote(tarGz)
+
     let success = false
     let tarCreated = false
 
     try {
-        // Pre-flight checks
         const composeSrc = join(projectRoot, 'docker-compose-prod.yml')
         if (!existsSync(composeSrc)) {
             throw new Error('docker-compose-prod.yml missing. Run: ship install')
@@ -58,7 +49,6 @@ export async function ship({ projectRoot, args }) {
             throw new Error('Dockerfile missing. Run: ship install')
         }
 
-        // (1) sync env
         const envExample = join(projectRoot, '.env.prod.example')
         const envFile = join(projectRoot, '.env')
         if (existsSync(envExample)) {
@@ -68,21 +58,17 @@ export async function ship({ projectRoot, args }) {
             warn('No .env or .env.prod.example found; skipping env upload')
         }
 
-        // (2-3) build & tag
         dockerBuild({ image, tag, cwd: projectRoot })
         if (tag !== 'latest') {
             dockerTag({ image, tag, alias: 'latest' })
         }
 
-        // (4) save | gzip
         await dockerSaveGzip({ image, tag, tarPath })
         tarCreated = true
         ok(`Image saved: ${tarGz}`)
 
-        // (5) remote mkdir
-        transport.ssh(`mkdir -p ${remotePath}`)
+        transport.ssh(`mkdir -p ${qPath}`)
 
-        // (6) scp tar + env + deploy.sh
         const filesToCopy = [tarPath]
         if (existsSync(envFile)) filesToCopy.push(envFile)
         const deploySh = join(projectRoot, 'deploy.sh')
@@ -90,13 +76,13 @@ export async function ship({ projectRoot, args }) {
         else warn('deploy.sh not found locally (was ship install run?)')
 
         transport.scp(...filesToCopy, `${target}:${remotePath}/`)
-
-        // (7) scp compose, renaming
         transport.scp(composeSrc, `${target}:${remotePath}/docker-compose.yml`)
 
-        // (8) trigger remote deploy
-        const remoteEnv = `IMAGE_NAME=${image} IMAGE_TAG=${tag} CONTAINER_NAME=${container}`
-        transport.ssh(`cd ${remotePath} && ${remoteEnv} bash deploy.sh ${tarGz}`)
+        const remoteCmd =
+            `cd ${qPath} && ` +
+            `IMAGE_NAME=${qImage} IMAGE_TAG=${qTag} CONTAINER_NAME=${qContainer} ` +
+            `bash deploy.sh ${qTarGz}`
+        transport.ssh(remoteCmd)
 
         success = true
         console.log()

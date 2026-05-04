@@ -52,6 +52,34 @@ export function shellQuote(arg) {
     return /[\s"'$`\\]/.test(arg) ? `"${arg.replace(/"/g, '\\"')}"` : arg
 }
 
+export function posixSingleQuote(value) {
+    const s = String(value)
+    return `'${s.replace(/'/g, `'\\''`)}'`
+}
+
+const VALIDATORS = {
+    user:      /^[a-zA-Z_][a-zA-Z0-9_.-]{0,63}$/,
+    ip:        /^[a-zA-Z0-9.\-:[\]]{1,253}$/,
+    port:      /^[1-9][0-9]{0,4}$/,
+    image:     /^[a-z0-9][a-z0-9._-]*(\/[a-z0-9][a-z0-9._-]*){0,5}$/,
+    tag:       /^[a-zA-Z0-9_][a-zA-Z0-9._-]{0,127}$/,
+    container: /^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$/,
+    path:      /^\/[a-zA-Z0-9_./-]{0,255}$/,
+}
+
+export function validate(name, value) {
+    const re = VALIDATORS[name]
+    if (!re) throw new Error(`Unknown validator: ${name}`)
+    const s = String(value)
+    if (!re.test(s)) {
+        throw new Error(
+            `Invalid --${name}: ${JSON.stringify(s)}\n` +
+            `  Allowed pattern: ${re}`
+        )
+    }
+    return s
+}
+
 const isWin = process.platform === 'win32'
 
 /** Detect WSL / Git Bash where Linux paths are usable from Node */

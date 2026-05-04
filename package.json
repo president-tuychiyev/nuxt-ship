@@ -1,6 +1,6 @@
 {
   "name": "nuxt-ship",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Build a Docker image locally, ship it to your server over SSH, run it. Tar and temporary files are auto-cleaned.",
   "type": "module",
   "bin": {
