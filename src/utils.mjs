@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 
 export const log  = (msg) => console.log(`\x1b[36m▸\x1b[0m ${msg}`)
@@ -10,16 +10,10 @@ export const err  = (msg) => console.error(`\x1b[31m✗\x1b[0m ${msg}`)
 export function parseArgs(argv) {
     const args = { _: [] }
     const aliases = {
-        u: 'user',
-        P: 'port',
-        p: 'path',
-        t: 'tag',
-        i: 'image',
-        c: 'container',
-        h: 'help',
-        v: 'version',
+        u: 'user', P: 'port', p: 'path', t: 'tag',
+        i: 'image', c: 'container', h: 'help', v: 'version',
     }
-    const booleanFlags = new Set(['no-control-master', 'help', 'version'])
+    const booleanFlags = new Set(['no-control-master', 'help', 'version', 'debug'])
 
     for (let i = 0; i < argv.length; i++) {
         const a = argv[i]
@@ -58,59 +52,115 @@ export function shellQuote(arg) {
     return /[\s"'$`\\]/.test(arg) ? `"${arg.replace(/"/g, '\\"')}"` : arg
 }
 
-/**
- * Resolve an executable to an absolute path. Node's spawn doesn't always inherit
- * a fully populated PATH (especially in WSL, snap, or restricted shells), so we
- * look up via `which`/`where` and fall back to common install locations.
- */
+const isWin = process.platform === 'win32'
+
+/** Detect WSL / Git Bash where Linux paths are usable from Node */
+function isWslOrUnixLike() {
+    if (!isWin) return true
+    try {
+        // WSL leaks /proc to Windows-side via interop in some setups, but mostly we're Linux Node
+        return existsSync('/proc/version')
+    } catch { return false }
+}
+
+function isExecutable(p) {
+    try {
+        const s = statSync(p)
+        return s.isFile()
+    } catch { return false }
+}
+
 const binCache = new Map()
+
+/**
+ * Resolve `name` to an absolute executable path.
+ *  1. user override via env (e.g. DOCKER_BIN, SSH_BIN)
+ *  2. shell lookup: `command -v` (sh), `where` (cmd)
+ *  3. login shell lookup: `bash -lc 'command -v X'` (loads /etc/profile)
+ *  4. common install paths
+ *  5. fallback to plain name (let spawn try OS PATH)
+ */
 export function resolveBin(name) {
     if (binCache.has(name)) return binCache.get(name)
 
-    const tryPaths = []
-    let lookup = null
+    // (1) explicit override
+    const envKey = `${name.toUpperCase()}_BIN`
+    if (process.env[envKey] && isExecutable(process.env[envKey])) {
+        binCache.set(name, process.env[envKey])
+        return process.env[envKey]
+    }
 
-    if (process.platform === 'win32') {
-        lookup = spawnSync('where', [name], { encoding: 'utf8' })
-        tryPaths.push(
+    const candidates = []
+    const lookups = []
+
+    if (isWin) {
+        lookups.push(['where', [name]])
+        candidates.push(
             `C:\\Program Files\\Docker\\Docker\\resources\\bin\\${name}.exe`,
             `C:\\Windows\\System32\\OpenSSH\\${name}.exe`,
+            `C:\\Windows\\System32\\${name}.exe`,
+            `C:\\Program Files\\Git\\usr\\bin\\${name}.exe`,
+            `C:\\Program Files\\Git\\mingw64\\bin\\${name}.exe`,
         )
-    } else {
-        // Use the shell so PATH from /etc/profile, ~/.profile, etc. is honoured.
-        lookup = spawnSync('/bin/sh', ['-c', `command -v ${name}`], { encoding: 'utf8' })
-        tryPaths.push(
+    }
+    if (!isWin || existsSync('/bin/sh')) {
+        lookups.push(['/bin/sh', ['-c', `command -v ${name}`]])
+    }
+    if (existsSync('/bin/bash')) {
+        // login shell loads /etc/profile, ~/.profile so PATH is fully populated
+        lookups.push(['/bin/bash', ['-lc', `command -v ${name}`]])
+    }
+    if (!isWin || isWslOrUnixLike()) {
+        const home = process.env.HOME || ''
+        candidates.push(
             `/usr/local/bin/${name}`,
             `/usr/bin/${name}`,
             `/bin/${name}`,
             `/snap/bin/${name}`,
             `/usr/sbin/${name}`,
+            home && `${home}/.local/bin/${name}`,
+            home && `${home}/bin/${name}`,
         )
     }
 
-    let resolved = name
-    if (lookup && lookup.status === 0 && lookup.stdout) {
-        resolved = lookup.stdout.trim().split(/\r?\n/)[0]
-    } else {
-        for (const p of tryPaths) {
-            if (existsSync(p)) { resolved = p; break }
+    // (2-3) try shell lookups
+    for (const [cmd, args] of lookups) {
+        try {
+            const r = spawnSync(cmd, args, { encoding: 'utf8' })
+            if (r.status === 0 && r.stdout) {
+                const candidate = r.stdout.trim().split(/\r?\n/)[0]
+                if (candidate && isExecutable(candidate)) {
+                    binCache.set(name, candidate)
+                    return candidate
+                }
+            }
+        } catch {}
+    }
+
+    // (4) common paths
+    for (const p of candidates) {
+        if (p && isExecutable(p)) {
+            binCache.set(name, p)
+            return p
         }
     }
 
-    binCache.set(name, resolved)
-    return resolved
+    // (5) fallback: hope spawn finds it via OS PATH lookup
+    binCache.set(name, name)
+    return name
 }
 
 export function execSync(cmd, args, opts = {}) {
     const bin = resolveBin(cmd)
     log(`${cmd} ${args.map(shellQuote).join(' ')}`)
+    if (process.env.SHIP_DEBUG) console.log(`  [debug] resolved ${cmd} -> ${bin}`)
     const r = spawnSync(bin, args, { stdio: 'inherit', ...opts })
     if (r.error) {
         if (r.error.code === 'ENOENT') {
-            throw new Error(
-                `'${cmd}' not found on PATH. Install it or add its directory to PATH.\n` +
-                `  tried: ${bin}`
-            )
+            const hint = bin === cmd
+                ? `Could not locate '${cmd}'. Add its directory to PATH or set ${cmd.toUpperCase()}_BIN env var.`
+                : `Tried '${bin}'. Set ${cmd.toUpperCase()}_BIN to override.`
+            throw new Error(`'${cmd}' not found.\n  ${hint}`)
         }
         throw r.error
     }
