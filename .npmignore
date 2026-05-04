@@ -1,0 +1,11 @@
+.github
+.gitignore
+.idea
+.vscode
+*.log
+.env
+.env.*
+*.tar.gz
+test
+tests
+__tests__

@@ -1,0 +1,46 @@
+{
+  "name": "nuxt-ship",
+  "version": "0.1.0",
+  "description": "Build a Docker image locally, ship it to your server over SSH, run it. Tar and temporary files are auto-cleaned.",
+  "type": "module",
+  "bin": {
+    "nuxt-ship": "./bin/ship.mjs",
+    "ship": "./bin/ship.mjs"
+  },
+  "main": "./src/index.mjs",
+  "exports": {
+    ".": "./src/index.mjs"
+  },
+  "files": [
+    "bin",
+    "src",
+    "stubs",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "nuxt",
+    "docker",
+    "deploy",
+    "ssh",
+    "scp",
+    "ship",
+    "container",
+    "node",
+    "deployment",
+    "docker-compose"
+  ],
+  "author": "president-tuychiyev",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/president-tuychiyev/nuxt-ship.git"
+  },
+  "bugs": {
+    "url": "https://github.com/president-tuychiyev/nuxt-ship/issues"
+  },
+  "homepage": "https://github.com/president-tuychiyev/nuxt-ship#readme"
+}

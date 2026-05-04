@@ -1,0 +1,12 @@
+node_modules
+*.log
+.DS_Store
+.env
+.env.*
+!stubs/.env.prod.example
+*.tar.gz
+.idea
+.vscode
+.nuxt
+.output
+dist
