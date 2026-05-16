@@ -1,12 +1,5 @@
-node_modules
-*.log
-.DS_Store
-.env
-.env.*
-!stubs/.env.prod.example
+node_modules/
+dist/
 *.tar.gz
-.idea
-.vscode
-.nuxt
-.output
-dist
+.env
+.DS_Store

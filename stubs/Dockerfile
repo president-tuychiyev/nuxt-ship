@@ -1,21 +1,16 @@
-# syntax=docker/dockerfile:1.6
-FROM node:22-alpine AS builder
+FROM node:20-alpine
+
 WORKDIR /app
 
-COPY package*.json ./
-RUN npm ci
-
-COPY . .
-RUN npm run build
-
-FROM node:22-alpine AS runner
-WORKDIR /app
+# Copy the locally pre-built Nuxt output
+COPY .output ./.output
 
 ENV NODE_ENV=production \
     HOST=0.0.0.0 \
-    PORT=3000
-
-COPY --from=builder /app/.output ./.output
+    PORT=3000 \
+    NITRO_HOST=0.0.0.0 \
+    NITRO_PORT=3000
 
 EXPOSE 3000
+
 CMD ["node", ".output/server/index.mjs"]

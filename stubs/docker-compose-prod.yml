@@ -1,12 +1,12 @@
 services:
-  web:
-    image: ${IMAGE_NAME:-my-university-ui}:${IMAGE_TAG:-latest}
-    container_name: ${CONTAINER_NAME:-my-university-ui}
+  app:
+    image: ${IMAGE_NAME:-app}:${IMAGE_TAG:-latest}
+    container_name: app
     restart: unless-stopped
     env_file:
       - .env
     ports:
-      - "${HOST_PORT:-3000}:3000"
+      - "3000:3000"
     networks:
       - app_network
 
