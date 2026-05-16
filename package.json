@@ -1,6 +1,6 @@
 {
   "name": "nuxt-ship",
-  "version": "0.1.2",
+  "version": "0.1.4",
   "description": "Zero-config Docker deployment for Nuxt 4 — build locally, ship over SSH.",
   "keywords": [
     "nuxt",
