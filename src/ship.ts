@@ -146,9 +146,13 @@ export async function ship(opts: ShipOptions): Promise<void> {
     const qUser = shQuote(opts.user);
     const qImage = shQuote(imageName);
     const qTarGz = shQuote(tarGz);
-    // scp dest path is interpreted by the remote shell — quote it too.
-    const scpRemotePath = `${target}:${shQuote(opts.path + "/")}`;
-    const scpComposeDest = `${target}:${shQuote(opts.path + "/docker-compose.yml")}`;
+    // scp dest paths must NOT be shell-quoted. OpenSSH >= 9.0 defaults to the
+    // SFTP protocol, so no remote shell runs and the quotes end up as part of
+    // the filename: `remote mkdir "'/opt/app/'": No such file or directory`.
+    // Unquoted is safe here — run() spawns scp without a shell and RX.path
+    // already rejects spaces and every shell metacharacter.
+    const scpRemotePath = `${target}:${opts.path}/`;
+    const scpComposeDest = `${target}:${opts.path}/docker-compose.yml`;
 
     // 5. Create remote directory
     if (opts.root) {
